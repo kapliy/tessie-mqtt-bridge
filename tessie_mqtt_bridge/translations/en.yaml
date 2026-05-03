@@ -1,0 +1,16 @@
+configuration:
+  home_latitude:
+    name: "Home Latitude (0 = auto-detect from zone.home)"
+    description: >-
+      Override the home zone latitude. Leave at 0 to auto-detect from
+      your Home Assistant zone.home via the supervisor API.
+  home_longitude:
+    name: "Home Longitude (0 = auto-detect from zone.home)"
+    description: >-
+      Override the home zone longitude. Leave at 0 to auto-detect from
+      your Home Assistant zone.home via the supervisor API.
+  home_radius_meters:
+    name: "Home Radius in meters (100 = use zone.home radius)"
+    description: >-
+      Distance threshold for the home/not_home state. Leave at 100 to use
+      your zone.home radius instead of this value.
