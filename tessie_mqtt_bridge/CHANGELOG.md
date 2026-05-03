@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — 2026-05-03
+
+- Fix: home-zone auto-detect now triggers correctly when `home_latitude` / `home_longitude` are left at the default. The previous string comparison against `"0"` missed `bashio::config`'s `"0.0"` float form, so the add-on was skipping `zone.home` lookup and treating 0,0 as a real override (location entity worked but `home`/`not_home` never flipped).
+
 ## 0.2.0 — 2026-05-02
 
 - Generalized: any user can paste their own Tessie token + VIN.

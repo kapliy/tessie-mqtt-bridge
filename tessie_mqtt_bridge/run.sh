@@ -42,9 +42,13 @@ bashio::log.info "MQTT broker: ${MQTT_HOST}:${MQTT_PORT} (user=${MQTT_USERNAME})
 USER_HOME_LAT="$(bashio::config 'home_latitude')"
 USER_HOME_LON="$(bashio::config 'home_longitude')"
 
-if [ -n "$USER_HOME_LAT" ] && [ -n "$USER_HOME_LON" ] \
-   && [ "$USER_HOME_LAT" != "0" ] && [ "$USER_HOME_LON" != "0" ] \
-   && [ "$USER_HOME_LAT" != "null" ] && [ "$USER_HOME_LON" != "null" ]; then
+# Normalize to a numeric form so 0, 0.0, 0.00, "" and "null" all collapse to "0".
+# bashio::config returns floats as "0.0" for the default — the previous string
+# comparison against "0" missed that and incorrectly used 0.0 as a real override.
+USER_HOME_LAT_N="$(awk -v v="$USER_HOME_LAT" 'BEGIN { printf "%g", v + 0 }')"
+USER_HOME_LON_N="$(awk -v v="$USER_HOME_LON" 'BEGIN { printf "%g", v + 0 }')"
+
+if [ "$USER_HOME_LAT_N" != "0" ] && [ "$USER_HOME_LON_N" != "0" ]; then
   export HOME_LATITUDE="$USER_HOME_LAT"
   export HOME_LONGITUDE="$USER_HOME_LON"
   bashio::log.info "Home zone (manual override from add-on options): lat=${HOME_LATITUDE} lon=${HOME_LONGITUDE} radius=${HOME_RADIUS_METERS}m"
