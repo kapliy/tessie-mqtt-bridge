@@ -11,6 +11,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /app/requirements.txt
 
 COPY bridge.py /app/bridge.py
+COPY config.yaml /app/config.yaml
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 

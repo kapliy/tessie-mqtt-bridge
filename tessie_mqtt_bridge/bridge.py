@@ -38,7 +38,21 @@ try:
 except ImportError:
     pass
 
-VERSION = "0.2.0"
+def _read_version() -> str:
+    """Read the canonical version from sibling config.yaml so the bridge
+    runtime log matches the add-on manifest. Works for both modes since
+    the Dockerfile copies config.yaml into /app alongside bridge.py."""
+    try:
+        cfg = (Path(__file__).parent / "config.yaml").read_text()
+        m = re.search(r'^version:\s*["\']?([^"\'\s]+)', cfg, re.MULTILINE)
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    return "unknown"
+
+
+VERSION = _read_version()
 log = logging.getLogger("tessie_bridge")
 
 

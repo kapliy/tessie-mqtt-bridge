@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 — 2026-05-03
+
+- Bridge now reads its `VERSION` from `config.yaml`, so the manifest is the single source of truth and the runtime log line always matches the installed add-on version. Dockerfile copies `config.yaml` into `/app` so the same code path works in both local and add-on modes.
+
 ## 0.2.1 — 2026-05-03
 
 - Fix: home-zone auto-detect now triggers correctly when `home_latitude` / `home_longitude` are left at the default. The previous string comparison against `"0"` missed `bashio::config`'s `"0.0"` float form, so the add-on was skipping `zone.home` lookup and treating 0,0 as a real override (location entity worked but `home`/`not_home` never flipped).

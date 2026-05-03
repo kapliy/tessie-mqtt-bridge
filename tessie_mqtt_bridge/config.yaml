@@ -1,5 +1,5 @@
 name: Tessie MQTT Bridge
-version: "0.2.1"
+version: "0.2.2"
 slug: tessie_mqtt_bridge
 description: Streams Tesla Fleet Telemetry from Tessie to MQTT for sub-second HA updates.
 url: https://github.com/kapliy/tessie-mqtt-bridge
