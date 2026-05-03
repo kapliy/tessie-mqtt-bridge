@@ -1,0 +1,46 @@
+[project]
+name = "tessie-mqtt-bridge"
+version = "0.0.0"
+description = "Tessie Fleet Telemetry → MQTT bridge (HA add-on)."
+requires-python = ">=3.9"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = [
+    "**/.venv/**",
+    "**/__pycache__/**",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+    "PL",   # pylint subset
+    "PERF", # perflint
+]
+ignore = [
+    "PLR0911",  # too many return statements — fine for handle_datum dispatch
+    "PLR0912",  # too many branches — same
+    "PLR2004",  # magic value used in comparison — too noisy for short scripts
+    "BLE001",   # blind except — already used intentionally with log.exception
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tessie_mqtt_bridge/probe_tessie.py" = [
+    "T201",     # print statements — probe is a CLI debug tool
+    "PLR0915",  # too many statements in `probe()` — linear CLI flow, fine
+]
+
+[tool.ty.src]
+include = ["tessie_mqtt_bridge"]
+exclude = ["**/.venv/**"]
+
+[tool.ty.environment]
+python-version = "3.9"

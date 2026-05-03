@@ -422,7 +422,7 @@ class Bridge:
         self.shutdown_event = asyncio.Event()
 
     @staticmethod
-    def _on_mqtt_disconnect(client, userdata, rc):  # noqa: ANN001
+    def _on_mqtt_disconnect(client, userdata, rc):
         if rc != 0:
             log.warning("MQTT disconnected (rc=%s); paho will auto-reconnect", rc)
 
@@ -548,7 +548,7 @@ class Bridge:
                     continue
                 self.handle_datum(key, datum.get("value", {}))
                 had_data = True
-            except Exception:  # noqa: BLE001
+            except Exception:
                 log.exception("error handling datum: %s", datum)
                 self.parse_error_streak += 1
                 if self.parse_error_streak >= 5:
@@ -574,12 +574,11 @@ class Bridge:
             self.publish_availability("online")
             log.info("connected to Tessie stream")
             async for raw in ws:
-                if isinstance(raw, bytes):
-                    raw = raw.decode("utf-8", errors="replace")
+                text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
                 try:
-                    msg = json.loads(raw)
+                    msg = json.loads(text)
                 except json.JSONDecodeError:
-                    log.warning("non-JSON message: %r", raw[:200])
+                    log.warning("non-JSON message: %r", text[:200])
                     continue
                 self.handle_message(msg)
 
@@ -600,10 +599,13 @@ class Bridge:
                         return 2
                     log.warning("Tessie WS handshake error: %s", e)
                 except ConnectionClosed as e:
-                    log.info("Tessie WS closed (code=%s reason=%r) — likely car sleeping", e.code, e.reason)
+                    log.info(
+                        "Tessie WS closed (code=%s reason=%r) — likely car sleeping",
+                        e.code, e.reason,
+                    )
                 except OSError as e:
                     log.warning("network error: %s", e)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     log.exception("unexpected error in WS loop")
                 self.publish_availability("offline")
                 if self.shutdown_event.is_set():

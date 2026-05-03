@@ -88,18 +88,20 @@ async def probe(vin: str, token: str, max_seconds: int | None) -> int:
             max_size=2_000_000,
         ) as ws:
             print(f"[{now_iso()}] connected. waiting for messages…")
-            print(f"[{now_iso()}] (if the car is asleep, expect silence; wake it via the Tesla app to test)")
+            print(
+                f"[{now_iso()}] (if the car is asleep, expect silence; "
+                f"wake it via the Tesla app to test)"
+            )
 
             async def reader() -> None:
                 nonlocal total_messages, raw_dumps_remaining
                 async for raw in ws:
-                    if isinstance(raw, bytes):
-                        raw = raw.decode("utf-8", errors="replace")
+                    text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
                     total_messages += 1
                     try:
-                        msg = json.loads(raw)
+                        msg = json.loads(text)
                     except json.JSONDecodeError:
-                        print(f"[{now_iso()}] non-JSON: {raw[:200]!r}")
+                        print(f"[{now_iso()}] non-JSON: {text[:200]!r}")
                         continue
 
                     if raw_dumps_remaining > 0:
@@ -141,7 +143,7 @@ async def probe(vin: str, token: str, max_seconds: int | None) -> int:
             wait_for = [reader_task, stop_task]
             if timeout_task:
                 wait_for.append(timeout_task)
-            done, pending = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
+            _done, pending = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
             for t in pending:
                 t.cancel()
 
@@ -164,7 +166,7 @@ async def probe(vin: str, token: str, max_seconds: int | None) -> int:
     print(f"=== summary after {elapsed:.1f}s ===")
     print(f"  messages received: {total_messages}")
     if field_counter:
-        print(f"  fields seen:")
+        print("  fields seen:")
         for k, n in field_counter.most_common():
             mark = ""
             if k in ("Location", "Gear", "VehicleSpeed"):
@@ -174,11 +176,11 @@ async def probe(vin: str, token: str, max_seconds: int | None) -> int:
         if missing:
             print()
             print(f"  ⚠ MISSING expected fields: {sorted(missing)}")
-            print(f"     Enable them in Tessie console → vehicle → Settings → Fleet Telemetry")
+            print("     Enable them in Tessie console → vehicle → Settings → Fleet Telemetry")
     elif total_messages == 0:
-        print(f"  no messages received. likely causes:")
-        print(f"    - car is asleep (wake it from the Tesla app and re-run)")
-        print(f"    - Fleet Telemetry not enabled in Tessie console for this VIN")
+        print("  no messages received. likely causes:")
+        print("    - car is asleep (wake it from the Tesla app and re-run)")
+        print("    - Fleet Telemetry not enabled in Tessie console for this VIN")
     return 0
 
 
@@ -188,12 +190,20 @@ def main() -> None:
                    help="Stop after N seconds and print a summary. Default: run until Ctrl-C.")
     p.add_argument("--vin", default=os.environ.get("TESSIE_VIN", ""),
                    help="Vehicle VIN. Defaults to $TESSIE_VIN.")
-    p.add_argument("--token", default=os.environ.get("TESSIE_TOKEN", ""),
-                   help="Tessie access token. Defaults to $TESSIE_TOKEN. (Don't paste on the command line on shared machines.)")
+    p.add_argument(
+        "--token", default=os.environ.get("TESSIE_TOKEN", ""),
+        help=(
+            "Tessie access token. Defaults to $TESSIE_TOKEN. "
+            "(Don't paste on the command line on shared machines.)"
+        ),
+    )
     args = p.parse_args()
 
     if not args.token:
-        print("error: TESSIE_TOKEN not set. Run `set -a; source .env; set +a` first.", file=sys.stderr)
+        print(
+            "error: TESSIE_TOKEN not set. Run `set -a; source .env; set +a` first.",
+            file=sys.stderr,
+        )
         sys.exit(2)
     if len(args.vin) != 17:
         print(f"error: TESSIE_VIN must be 17 chars, got {args.vin!r}", file=sys.stderr)
