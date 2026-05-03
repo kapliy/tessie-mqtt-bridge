@@ -18,8 +18,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install tools
-        run: pip install ruff ty
+      - name: Install tools and runtime deps
+        # ty needs runtime imports resolvable (websockets, paho-mqtt, python-dotenv)
+        # to type-check, so install requirements alongside the tools.
+        run: |
+          pip install ruff ty
+          pip install -r tessie_mqtt_bridge/requirements.txt
       - name: ruff check
         run: ruff check
       - name: ty check
