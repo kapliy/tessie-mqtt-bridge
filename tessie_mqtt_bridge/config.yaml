@@ -1,0 +1,42 @@
+name: Tessie MQTT Bridge
+version: "0.2.0"
+slug: tessie_mqtt_bridge
+description: Streams Tesla Fleet Telemetry from Tessie to MQTT for sub-second HA updates.
+url: https://github.com/kapliy/tessie-mqtt-bridge
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+startup: services
+boot: auto
+hassio_api: true
+homeassistant_api: true
+services:
+  - mqtt:need
+options:
+  tessie_token: ""
+  tessie_vin: ""
+  fields:
+    - Location
+    - Gear
+    - VehicleSpeed
+  topic_prefix: tesla_stream
+  discovery_prefix: homeassistant
+  home_radius_meters: 100
+  log_level: info
+  tessie_url: "wss://streaming.tessie.com"
+  home_latitude: 0
+  home_longitude: 0
+schema:
+  tessie_token: password
+  tessie_vin: "match(^[A-HJ-NPR-Z0-9]{17}$)"
+  fields:
+    - "list(Location|Gear|VehicleSpeed|GpsHeading|Soc|EnergyRemaining|RatedRange|ChargeLimitSoc|DetailedChargeState|ACChargingPower|DCChargingPower|ChargePortDoorOpen|Odometer|InsideTemp|OutsideTemp|BatteryHeaterOn|Locked|SentryMode|ValetModeEnabled|DriverSeatOccupied|HomelinkNearby|Version|VehicleName|TpmsPressureFl|TpmsPressureFr|TpmsPressureRl|TpmsPressureRr)"
+  topic_prefix: str
+  discovery_prefix: str
+  home_radius_meters: int(10,5000)
+  log_level: list(debug|info|warning|error)
+  tessie_url: str?
+  home_latitude: float?
+  home_longitude: float?
