@@ -114,6 +114,8 @@ FIELD_REGISTRY: dict[str, dict[str, Any]] = {
     "Gear": {
         "handler": "shift_state", "name": "Shift State",
         "icon": "mdi:car-shift-pattern",
+        "device_class": "enum",
+        "options": ["P", "R", "N", "D", "unknown"],
     },
 
     # --- battery & charging ---
@@ -363,7 +365,7 @@ def discovery_for(field: str, meta: dict[str, Any]) -> tuple[str, str, dict[str,
 
     # numeric / string / enum_strip / shift_state → sensor
     p["state_topic"] = topic_for(field)
-    for k in ("unit", "device_class", "state_class"):
+    for k in ("unit", "device_class", "state_class", "options"):
         if meta.get(k):
             p["unit_of_measurement" if k == "unit" else k] = meta[k]
     return "sensor", f"{base}/sensor/{node}/{fid}/config", p

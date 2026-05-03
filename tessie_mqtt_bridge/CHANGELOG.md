@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4 — 2026-05-03
+
+- `sensor.tesla_streaming_shift_state` is now declared as an HA enum with `device_class: enum` and `options: [P, R, N, D, unknown]` in the discovery payload. Prettier UI display, no functional change for existing automations — entity_id and state values are unchanged. The discovery builder now generally forwards an `options` field through to HA so future enum sensors can reuse it.
+
 ## 0.2.3 — 2026-05-03
 
 - New `device_name` add-on option (default `Tesla (Streaming)`). Lets users with multiple cars (or anyone who doesn't love the parens in the slug) override the device label and the slug-derived entity IDs. The stable VIN-based device identifier is unchanged so existing entities aren't orphaned by a rename.
