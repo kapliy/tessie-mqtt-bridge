@@ -1,5 +1,5 @@
 name: Tessie MQTT Bridge
-version: "0.2.2"
+version: "0.2.3"
 slug: tessie_mqtt_bridge
 description: Streams Tesla Fleet Telemetry from Tessie to MQTT for sub-second HA updates.
 url: https://github.com/kapliy/tessie-mqtt-bridge
@@ -21,6 +21,7 @@ options:
     - Location
     - Gear
     - VehicleSpeed
+  device_name: "Tesla (Streaming)"
   topic_prefix: tesla_stream
   discovery_prefix: homeassistant
   home_radius_meters: 100
@@ -33,6 +34,7 @@ schema:
   tessie_vin: "match(^[A-HJ-NPR-Z0-9]{17}$)"
   fields:
     - "list(Location|Gear|VehicleSpeed|GpsHeading|Soc|EnergyRemaining|RatedRange|ChargeLimitSoc|DetailedChargeState|ACChargingPower|DCChargingPower|ChargePortDoorOpen|Odometer|InsideTemp|OutsideTemp|BatteryHeaterOn|Locked|SentryMode|ValetModeEnabled|DriverSeatOccupied|HomelinkNearby|Version|VehicleName|TpmsPressureFl|TpmsPressureFr|TpmsPressureRl|TpmsPressureRr)"
+  device_name: str
   topic_prefix: str
   discovery_prefix: str
   home_radius_meters: int(10,5000)

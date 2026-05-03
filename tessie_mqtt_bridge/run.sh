@@ -7,6 +7,7 @@ set -e
 export TESSIE_TOKEN="$(bashio::config 'tessie_token')"
 export TESSIE_VIN="$(bashio::config 'tessie_vin')"
 export TESSIE_URL="$(bashio::config 'tessie_url')"
+export DEVICE_NAME="$(bashio::config 'device_name')"
 export MQTT_TOPIC_PREFIX="$(bashio::config 'topic_prefix')"
 export MQTT_DISCOVERY_PREFIX="$(bashio::config 'discovery_prefix')"
 export HOME_RADIUS_METERS="$(bashio::config 'home_radius_meters')"

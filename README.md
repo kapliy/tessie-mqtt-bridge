@@ -1,5 +1,7 @@
 # Tessie MQTT Bridge
 
+[![lint](https://github.com/kapliy/tessie-mqtt-bridge/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/kapliy/tessie-mqtt-bridge/actions/workflows/lint.yml)
+
 Republishes Tessie Fleet Telemetry (WebSocket) to the local MQTT broker so Home Assistant gets sub-second Tesla updates. Built as a Home Assistant custom add-on, with a local-run mode for testing.
 
 The official `tessie` core integration polls and lags real arrival by tens of seconds (sometimes minutes when the car is asleep). This bridge runs in parallel and creates a separate device "Tesla (Streaming)" with the streaming fields you select.

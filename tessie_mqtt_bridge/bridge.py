@@ -80,6 +80,7 @@ HOME_LONGITUDE = float(_env("HOME_LONGITUDE", "0") or "0")
 HOME_RADIUS_METERS = float(_env("HOME_RADIUS_METERS", "100") or "100")
 LOG_LEVEL = _env("LOG_LEVEL", "INFO").upper()
 TESSIE_FIELDS = _env("TESSIE_FIELDS", "Location,Gear,VehicleSpeed")
+DEVICE_NAME = _env("DEVICE_NAME", "Tesla (Streaming)")
 
 
 # ----------------------------- field registry ---------------------------------
@@ -300,8 +301,10 @@ SHIFT_MAP = {
 
 def device_block() -> dict[str, Any]:
     return {
+        # `identifiers` is the stable registry key — keep it tied to the VIN, not
+        # the user-facing device name, so a name change doesn't orphan entities.
         "identifiers": [f"tesla_stream_{TESSIE_VIN}"],
-        "name": "Tesla (Streaming)",
+        "name": DEVICE_NAME,
         "manufacturer": "Tesla",
         "model": "Fleet Telemetry via Tessie",
         "sw_version": VERSION,

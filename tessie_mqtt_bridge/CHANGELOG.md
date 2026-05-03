@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 — 2026-05-03
+
+- New `device_name` add-on option (default `Tesla (Streaming)`). Lets users with multiple cars (or anyone who doesn't love the parens in the slug) override the device label and the slug-derived entity IDs. The stable VIN-based device identifier is unchanged so existing entities aren't orphaned by a rename.
+
 ## 0.2.2 — 2026-05-03
 
 - Bridge now reads its `VERSION` from `config.yaml`, so the manifest is the single source of truth and the runtime log line always matches the installed add-on version. Dockerfile copies `config.yaml` into `/app` so the same code path works in both local and add-on modes.

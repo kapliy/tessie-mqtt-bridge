@@ -1,4 +1,12 @@
 configuration:
+  device_name:
+    name: "Device Name"
+    description: >-
+      Name shown for this device in Home Assistant. Also drives the
+      auto-generated entity IDs via slugification, e.g. "Tesla (Streaming)"
+      becomes device_tracker.tesla_streaming_location. Pick something
+      distinct if you have multiple cars. Existing entities won't auto-rename
+      after a change — adjust their entity IDs in HA's UI if needed.
   home_latitude:
     name: "Home Latitude (0 = auto-detect from zone.home)"
     description: >-
