@@ -17,7 +17,7 @@ The official integration's entities are **not** modified.
 | **Local** | First-time testing, before installing the add-on | `.env` file, `python bridge.py` |
 | **HA add-on** | Production | Configure via HA UI; MQTT credentials auto-injected by Supervisor |
 
-## Prerequisites (one-time, in Tessie console)
+## Prerequisites (Tessie console — one-time)
 
 1. Go to [tessie.com](https://tessie.com) → vehicle → **Settings** → **Fleet Telemetry**.
 2. Enable streaming and select these fields at minimum:
@@ -26,6 +26,32 @@ The official integration's entities are **not** modified.
    - `VehicleSpeed` (optional but useful)
 3. From **Developer Settings**, copy the access token.
 4. Note the 17-char VIN (you'll paste it into the add-on Configuration tab or `.env.local`).
+
+## Prerequisites (Home Assistant side)
+
+This add-on runs only on **Home Assistant OS** or **HA Supervised**. It won't
+work on HA Container or HA Core — those don't support Supervisor add-ons.
+
+You also need an MQTT broker registered with Supervisor before this add-on
+will install — Supervisor refuses to start `services: mqtt:need` add-ons
+without one.
+
+If you haven't set MQTT up yet:
+
+1. **Install the Mosquitto broker add-on.** Settings → Add-ons → Add-on store →
+   "Mosquitto broker" → Install → Start. Recommended: toggle Watchdog and
+   Start-on-boot ON.
+2. **Configure the MQTT integration.** Settings → Devices & Services. HA
+   usually auto-discovers Mosquitto once it's running and offers it as a
+   "Discovered" integration — click Configure and accept the defaults. If it
+   doesn't auto-discover, click **+ Add Integration** → **MQTT** → enter
+   `core-mosquitto` as the broker host.
+
+When you run this **as the add-on** (production), Supervisor creates a
+dedicated MQTT user for the add-on and injects its credentials — you never
+see or manage them. If you're running locally for testing, see
+[tessie_mqtt_bridge/README.md](tessie_mqtt_bridge/README.md#2-fill-in-envlocal)
+for how to add an HA user that Mosquitto can authenticate against.
 
 ## Local testing
 
@@ -53,6 +79,10 @@ mosquitto_sub -h <ha-host> -u <user> -P <pass> -t 'tesla_stream/#' -v
 Within ~10s, HA's **Settings → Devices & Services** should show a new device "Tesla (Streaming)".
 
 ## Installing as a Home Assistant add-on
+
+> Complete **Prerequisites (Home Assistant side)** above first — MQTT must
+> already be set up or the install will fail with an "unknown error" from
+> Supervisor.
 
 1. Push this repo to GitHub (e.g. `kapliy/tessie-mqtt-bridge`).
 2. In HA: **Settings → Add-ons → ⋮ (top right) → Repositories** → paste the repo URL → **Add**.
