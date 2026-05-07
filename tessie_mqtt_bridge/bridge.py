@@ -81,6 +81,16 @@ HOME_RADIUS_METERS = float(_env("HOME_RADIUS_METERS", "100") or "100")
 LOG_LEVEL = _env("LOG_LEVEL", "INFO").upper()
 TESSIE_FIELDS = _env("TESSIE_FIELDS", "Location,Gear,VehicleSpeed")
 DEVICE_NAME = _env("DEVICE_NAME", "Tesla (Streaming)")
+# Don't publish availability=offline immediately on WS close; if the bridge
+# reconnects within this many seconds, the entity stays "online" and the
+# routine ~60-min Tessie idle timeout becomes invisible to HA. 0 disables.
+OFFLINE_GRACE_SECONDS = int(_env("OFFLINE_GRACE_SECONDS", "30") or "30")
+# HA-side staleness guard: if no fresh state arrives within this many seconds
+# the entity goes `unavailable` regardless of bridge availability. Prevents
+# automations from triggering on retained values being replayed after a
+# reconnect blip (the streaming bridge's most common false-fire source). 0
+# disables. Applied to per-field entities only (not the connectivity sensor).
+EXPIRE_AFTER_SECONDS = int(_env("EXPIRE_AFTER_SECONDS", "600") or "600")
 
 
 # ----------------------------- field registry ---------------------------------
@@ -330,6 +340,8 @@ def _base_payload(field: str, meta: dict[str, Any]) -> dict[str, Any]:
         "availability": _availability(),
         "device": device_block(),
     }
+    if EXPIRE_AFTER_SECONDS > 0:
+        p["expire_after"] = EXPIRE_AFTER_SECONDS
     if "icon" in meta:
         p["icon"] = meta["icon"]
     return p
@@ -425,6 +437,13 @@ class Bridge:
         self.mqtt.on_disconnect = self._on_mqtt_disconnect
         self.parse_error_streak = 0
         self.shutdown_event = asyncio.Event()
+        # Reconnect backoff lives on the instance so run_websocket_once can
+        # reset it the moment a connection establishes — the WS close that
+        # follows raises an exception, so resetting at the call site is racy.
+        self.backoff = 1
+        # Pending availability=offline publish, scheduled when WS exits and
+        # cancelled when the next WS connect succeeds within the grace window.
+        self._pending_offline: asyncio.Task | None = None
 
     @staticmethod
     def _on_mqtt_disconnect(client, userdata, rc):
@@ -447,6 +466,19 @@ class Bridge:
 
     def publish_availability(self, state: str) -> None:
         self.mqtt.publish(AVAILABILITY_TOPIC, state, qos=1, retain=True)
+
+    def _cancel_pending_offline(self) -> None:
+        if self._pending_offline and not self._pending_offline.done():
+            self._pending_offline.cancel()
+        self._pending_offline = None
+
+    async def _delayed_offline(self, delay: float) -> None:
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        self.publish_availability("offline")
+        log.info("WS still down after %ds grace — published availability=offline", int(delay))
 
     # --- per-handler dispatch ---
 
@@ -576,7 +608,11 @@ class Bridge:
             close_timeout=5,
             max_size=2_000_000,
         ) as ws:
+            # Connection established — cancel any pending offline-grace timer
+            # before publishing online to avoid a racy offline-after-online flap.
+            self._cancel_pending_offline()
             self.publish_availability("online")
+            self.backoff = 1
             log.info("connected to Tessie stream")
             async for raw in ws:
                 text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
@@ -591,12 +627,10 @@ class Bridge:
         self.mqtt_start()
         await asyncio.sleep(0.5)
         self.publish_discovery()
-        backoff = 1
         try:
             while not self.shutdown_event.is_set():
                 try:
                     await self.run_websocket_once()
-                    backoff = 1
                 except InvalidStatus as e:
                     code = getattr(getattr(e, "response", None), "status_code", None)
                     if code == 401:
@@ -612,17 +646,27 @@ class Bridge:
                     log.warning("network error: %s", e)
                 except Exception:
                     log.exception("unexpected error in WS loop")
-                self.publish_availability("offline")
+                # Schedule (or fire) availability=offline. Grace period covers
+                # routine ~60-min Tessie idle closes — the bridge typically
+                # reconnects in ~1s, so HA never sees a flap.
+                if OFFLINE_GRACE_SECONDS > 0:
+                    self._cancel_pending_offline()
+                    self._pending_offline = asyncio.create_task(
+                        self._delayed_offline(OFFLINE_GRACE_SECONDS)
+                    )
+                else:
+                    self.publish_availability("offline")
                 if self.shutdown_event.is_set():
                     break
-                log.info("reconnecting in %ds", backoff)
+                log.info("reconnecting in %ds", self.backoff)
                 try:
-                    await asyncio.wait_for(self.shutdown_event.wait(), timeout=backoff)
+                    await asyncio.wait_for(self.shutdown_event.wait(), timeout=self.backoff)
                     break
                 except asyncio.TimeoutError:
                     pass
-                backoff = min(backoff * 2, 60)
+                self.backoff = min(self.backoff * 2, 60)
         finally:
+            self._cancel_pending_offline()
             self.publish_availability("offline")
             await asyncio.sleep(0.2)
             self.mqtt.loop_stop()

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.5 — 2026-05-07
+
+Robustness improvements driven by a real false-fire on the unplug-garage automation.
+
+- **Offline-grace period.** New `offline_grace_seconds` option (default 30). Tessie's server idle-closes the WebSocket every ~60 minutes (code 1006); the bridge reconnects within ~1 second. Previously the bridge published `availability=offline` immediately on every such close, causing HA to flip every entity to `unavailable` and back, which can falsely fire `to:` state-change triggers on the replay of retained values. With grace > 0, the offline publish is delayed and cancelled if the next reconnect succeeds in time. Routine idle closes become invisible to HA.
+- **`expire_after` in discovery.** New `expire_after_seconds` option (default 600). Adds the `expire_after` field to per-entity MQTT discovery payloads so HA marks entities `unavailable` once their data is stale, regardless of the bridge's availability topic. Backstops the offline-grace mechanism for the genuine "data is stale" case (car asleep at work for hours, etc.) — automations triggering on `to: <state>` won't see retained replays as fresh state changes.
+- **Backoff reset bug fix.** Reconnect backoff now resets to 1s the moment a WebSocket connection is established, not only when `run_websocket_once` returns without raising. Tessie's idle-close raises `ConnectionClosed`, so the previous code never reset and backoff saturated at 60s permanently. Reconnects after routine idle closes are now ~1s instead of 60s.
+
 ## 0.2.4 — 2026-05-03
 
 - `sensor.tesla_streaming_shift_state` is now declared as an HA enum with `device_class: enum` and `options: [P, R, N, D, unknown]` in the discovery payload. Prettier UI display, no functional change for existing automations — entity_id and state values are unchanged. The discovery builder now generally forwards an `options` field through to HA so future enum sensors can reuse it.

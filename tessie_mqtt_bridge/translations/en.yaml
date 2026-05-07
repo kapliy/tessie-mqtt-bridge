@@ -1,4 +1,19 @@
 configuration:
+  offline_grace_seconds:
+    name: "Offline Grace (seconds)"
+    description: >-
+      How long to wait before publishing availability=offline after the
+      Tessie WebSocket closes. Tessie's server idles connections at ~60
+      minutes; the bridge reconnects in ~1 second. With grace > 0 those
+      routine closes become invisible to HA. 30s is a good default.
+      Set to 0 to flap on every close (legacy behavior).
+  expire_after_seconds:
+    name: "Stale Data Timeout (seconds)"
+    description: >-
+      Mark each streamed entity as `unavailable` if no fresh state arrives
+      within this window. Prevents automations from firing on retained
+      MQTT values being replayed after a reconnect (the bridge's most
+      common false-fire source). 600 = 10 minutes. Set to 0 to disable.
   device_name:
     name: "Device Name"
     description: >-
