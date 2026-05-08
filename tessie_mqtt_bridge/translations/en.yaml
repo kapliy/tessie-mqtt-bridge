@@ -11,9 +11,13 @@ configuration:
     name: "Stale Data Timeout (seconds)"
     description: >-
       Mark each streamed entity as `unavailable` if no fresh state arrives
-      within this window. Prevents automations from firing on retained
-      MQTT values being replayed after a reconnect (the bridge's most
-      common false-fire source). 600 = 10 minutes. Set to 0 to disable.
+      within this window. CAUTION: for slow-changing fields like Charge
+      State, Tessie may not emit messages frequently enough to keep this
+      timer alive — the entity flaps to unavailable and any automation
+      trigger using `not_from: [unavailable, unknown]` will be suppressed
+      on the recovery transition. Default 0 (disabled). Use the bridge's
+      Offline Grace + your trigger's `not_from` guard for replay
+      protection instead.
   device_name:
     name: "Device Name"
     description: >-

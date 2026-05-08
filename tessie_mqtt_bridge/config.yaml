@@ -1,5 +1,5 @@
 name: Tessie MQTT Bridge
-version: "0.2.6"
+version: "0.2.7"
 slug: tessie_mqtt_bridge
 description: Streams Tesla Fleet Telemetry from Tessie to MQTT for sub-second HA updates.
 url: https://github.com/kapliy/tessie-mqtt-bridge
@@ -30,7 +30,7 @@ options:
   home_latitude: 0
   home_longitude: 0
   offline_grace_seconds: 30
-  expire_after_seconds: 600
+  expire_after_seconds: 0
 schema:
   tessie_token: password
   tessie_vin: "match(^[A-HJ-NPR-Z0-9]{17}$)"

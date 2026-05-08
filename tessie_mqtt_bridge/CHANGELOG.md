@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.7 — 2026-05-08
+
+- **`expire_after_seconds` default changed from 600 to 0** (disabled). The 0.2.5 default of 600s caused per-entity `unavailable` flapping for slow-changing fields like `DetailedChargeState` (Tessie heartbeat cadence > 10min between events) and `Location` (when the car sleeps). Triggers using `not_from: [unavailable, unknown]` — the standard guard against retained-value replay false-fires — were suppressed on the recovery `unavailable → <state>` transition, breaking real unplug/arrival detection. Pre-0.2.5 had no `expire_after` and these triggers worked in real time; 0.2.7 restores that behavior. Users who want staleness detection can opt in via the add-on Configuration tab. **Existing installs need to manually set `expire_after_seconds` to 0 in the Configuration tab — Supervisor preserves user-saved values across updates and won't pick up the new default automatically.**
+
 ## 0.2.6 — 2026-05-08
 
 - Bootstrap retry for the supervisor zone.home fetch in `run.sh`. At HA boot the Core API can briefly return 502 while components are still loading; previously a single transient failure left the bridge running with no home zone for the rest of its lifetime, silently breaking the location-based automation. Now retries up to 6 times with 5s sleeps before falling through to the warning. The warning now also tells the user to use the manual `home_latitude`/`home_longitude` override as a workaround.
