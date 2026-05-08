@@ -56,10 +56,27 @@ if [ "$USER_HOME_LAT_N" != "0" ] && [ "$USER_HOME_LON_N" != "0" ]; then
   export HOME_LONGITUDE="$USER_HOME_LON"
   bashio::log.info "Home zone (manual override from add-on options): lat=${HOME_LATITUDE} lon=${HOME_LONGITUDE} radius=${HOME_RADIUS_METERS}m"
 else
-  HOME_JSON="$(curl -fsSL \
-    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-    -H "Content-Type: application/json" \
-    http://supervisor/core/api/states/zone.home || true)"
+  # Retry the supervisor zone.home fetch — at HA boot the Core API may
+  # briefly return 502 while components are still loading. Without retries,
+  # a single transient failure leaves the bridge running with no home zone
+  # for the rest of its lifetime (silent automation breakage).
+  HOME_JSON=""
+  attempt=1
+  max_attempts=6
+  while [ $attempt -le $max_attempts ]; do
+    HOME_JSON="$(curl -fsSL \
+      -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+      -H "Content-Type: application/json" \
+      http://supervisor/core/api/states/zone.home 2>/dev/null || true)"
+    if [ -n "$HOME_JSON" ] && echo "$HOME_JSON" | jq -e '.attributes.latitude' >/dev/null 2>&1; then
+      break
+    fi
+    if [ $attempt -lt $max_attempts ]; then
+      bashio::log.info "zone.home not yet reachable (attempt ${attempt}/${max_attempts}); retrying in 5s..."
+      sleep 5
+    fi
+    attempt=$((attempt + 1))
+  done
 
   if [ -n "$HOME_JSON" ] && echo "$HOME_JSON" | jq -e '.attributes.latitude' >/dev/null 2>&1; then
     export HOME_LATITUDE="$(echo "$HOME_JSON" | jq -r '.attributes.latitude')"
@@ -70,7 +87,7 @@ else
     fi
     bashio::log.info "Home zone (auto-detected from zone.home): lat=${HOME_LATITUDE} lon=${HOME_LONGITUDE} radius=${HOME_RADIUS_METERS}m"
   else
-    bashio::log.warning "Could not fetch zone.home from HA, and no manual override set — home/not_home state will not be computed."
+    bashio::log.warning "Could not fetch zone.home from HA after ${max_attempts} attempts, and no manual override set — home/not_home state will not be computed. Set home_latitude/home_longitude in the Configuration tab to bypass this."
     export HOME_LATITUDE=0
     export HOME_LONGITUDE=0
   fi

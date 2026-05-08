@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.6 — 2026-05-08
+
+- Bootstrap retry for the supervisor zone.home fetch in `run.sh`. At HA boot the Core API can briefly return 502 while components are still loading; previously a single transient failure left the bridge running with no home zone for the rest of its lifetime, silently breaking the location-based automation. Now retries up to 6 times with 5s sleeps before falling through to the warning. The warning now also tells the user to use the manual `home_latitude`/`home_longitude` override as a workaround.
+
 ## 0.2.5 — 2026-05-07
 
 Robustness improvements driven by a real false-fire on the unplug-garage automation.
