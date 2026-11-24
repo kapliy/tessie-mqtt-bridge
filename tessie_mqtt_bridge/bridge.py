@@ -19,13 +19,15 @@ import os
 import re
 import signal
 import sys
+import time
+from datetime import datetime, timezone
 from math import atan2, cos, radians, sin, sqrt
 from pathlib import Path
 from typing import Any
 
 import paho.mqtt.client as mqtt
 import websockets
-from websockets.exceptions import ConnectionClosed, InvalidStatus
+from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 # Auto-load .env (committed defaults) then .env.local (gitignored secrets).
 # Both are looked up next to this script, so CWD doesn't matter. In the HA
@@ -90,7 +92,13 @@ OFFLINE_GRACE_SECONDS = int(_env("OFFLINE_GRACE_SECONDS", "30") or "30")
 # automations from triggering on retained values being replayed after a
 # reconnect blip (the streaming bridge's most common false-fire source). 0
 # disables. Applied to per-field entities only (not the connectivity sensor).
-EXPIRE_AFTER_SECONDS = int(_env("EXPIRE_AFTER_SECONDS", "600") or "600")
+EXPIRE_AFTER_SECONDS = int(_env("EXPIRE_AFTER_SECONDS", "0") or "0")
+# Throttle for the last_report timestamp sensor. HA automations gate on its
+# age, so this bounds how stale "fresh" can look.
+LAST_REPORT_MIN_INTERVAL = 5.0
+# Back off this long after Tessie rejects the token (401/403), instead of
+# hammering the endpoint every 60s.
+AUTH_FAIL_BACKOFF_SECONDS = 900
 
 
 # ----------------------------- field registry ---------------------------------
@@ -274,6 +282,7 @@ def topic_for(field: str) -> str:
 AVAILABILITY_TOPIC = f"{MQTT_TOPIC_PREFIX}/{TESSIE_VIN}/availability"
 LOCATION_ATTRS_TOPIC = f"{MQTT_TOPIC_PREFIX}/{TESSIE_VIN}/location"
 LOCATION_STATE_TOPIC = f"{MQTT_TOPIC_PREFIX}/{TESSIE_VIN}/location_state"
+LAST_REPORT_TOPIC = f"{MQTT_TOPIC_PREFIX}/{TESSIE_VIN}/last_report"
 
 
 def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -385,15 +394,30 @@ def discovery_for(field: str, meta: dict[str, Any]) -> tuple[str, str, dict[str,
 
 def discovery_payloads() -> list[tuple[str, dict[str, Any]]]:
     out: list[tuple[str, dict[str, Any]]] = []
+    base = MQTT_DISCOVERY_PREFIX
+    node = f"tesla_stream_{TESSIE_VIN}"
     for field in SELECTED_FIELDS:
         meta = FIELD_REGISTRY[field]
         _, topic, payload = discovery_for(field, meta)
         out.append((topic, payload))
 
+    # Always register the last-report timestamp: HA automations gate on its
+    # age to tell a fresh streamed value from a stale retained one.
+    out.append((
+        f"{base}/sensor/{node}/last_report/config",
+        {
+            "name": "Last Report",
+            "object_id": "tesla_stream_last_report",
+            "unique_id": f"tesla_stream_{TESSIE_VIN}_last_report",
+            "state_topic": LAST_REPORT_TOPIC,
+            "device_class": "timestamp",
+            "icon": "mdi:clock-check-outline",
+            "device": device_block(),
+        },
+    ))
+
     # Always register the availability binary_sensor — it's how HA learns the
     # bridge is online/offline regardless of which fields are streamed.
-    base = MQTT_DISCOVERY_PREFIX
-    node = f"tesla_stream_{TESSIE_VIN}"
     out.append((
         f"{base}/binary_sensor/{node}/online/config",
         {
@@ -422,6 +446,16 @@ def _format_number(raw: Any, decimals: int | None) -> str | None:
     return f"{f:.{decimals}f}"
 
 
+def _handshake_status(e: Exception) -> int | None:
+    """HTTP status from a failed WS handshake. websockets' legacy client (the
+    one `websockets.connect` is in 12.x) raises InvalidStatusCode with
+    `.status_code`; the new client raises InvalidStatus with `.response`."""
+    code = getattr(e, "status_code", None)
+    if code is None:
+        code = getattr(getattr(e, "response", None), "status_code", None)
+    return code
+
+
 # ----------------------------- bridge -----------------------------------------
 
 class Bridge:
@@ -435,6 +469,11 @@ class Bridge:
             self.mqtt.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
         self.mqtt.will_set(AVAILABILITY_TOPIC, "offline", qos=1, retain=True)
         self.mqtt.on_disconnect = self._on_mqtt_disconnect
+        self.mqtt.on_connect = self._on_mqtt_connect
+        # True while the Tessie WebSocket is up; read by the MQTT thread to
+        # restore availability after a broker reconnect.
+        self.ws_connected = False
+        self._last_report_sent = 0.0
         self.parse_error_streak = 0
         self.shutdown_event = asyncio.Event()
         # Reconnect backoff lives on the instance so run_websocket_once can
@@ -450,9 +489,24 @@ class Bridge:
         if rc != 0:
             log.warning("MQTT disconnected (rc=%s); paho will auto-reconnect", rc)
 
+    def _on_mqtt_connect(self, client, userdata, flags, rc):
+        if rc != 0:
+            log.warning("MQTT connect refused (rc=%s); paho will retry", rc)
+            return
+        # Runs on the first connect and on every reconnect. The broker may have
+        # published our last-will "offline" while we were away, and a broker
+        # restart can drop retained discovery, so re-announce both.
+        log.info("MQTT connected — publishing discovery and availability")
+        self.publish_discovery()
+        if self.ws_connected or (self._pending_offline and not self._pending_offline.done()):
+            self.publish_availability("online")
+
     def mqtt_start(self) -> None:
         log.info("connecting to MQTT %s:%s", MQTT_HOST, MQTT_PORT)
-        self.mqtt.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        # connect_async + loop_start: paho keeps retrying if the broker isn't
+        # up yet instead of the bridge crashing at boot.
+        self.mqtt.reconnect_delay_set(min_delay=1, max_delay=30)
+        self.mqtt.connect_async(MQTT_HOST, MQTT_PORT, keepalive=60)
         self.mqtt.loop_start()
 
     def publish_discovery(self) -> None:
@@ -491,18 +545,18 @@ class Bridge:
         if lat is None or lon is None:
             return
         attrs = {"latitude": float(lat), "longitude": float(lon), "gps_accuracy": 5.0}
-        self.mqtt.publish(LOCATION_ATTRS_TOPIC, json.dumps(attrs), qos=0, retain=True)
+        self.mqtt.publish(LOCATION_ATTRS_TOPIC, json.dumps(attrs), qos=1, retain=True)
         if HOME_LATITUDE != 0.0 or HOME_LONGITUDE != 0.0:
             d = haversine_meters(float(lat), float(lon), HOME_LATITUDE, HOME_LONGITUDE)
             state = "home" if d <= HOME_RADIUS_METERS else "not_home"
-            self.mqtt.publish(LOCATION_STATE_TOPIC, state, qos=0, retain=True)
+            self.mqtt.publish(LOCATION_STATE_TOPIC, state, qos=1, retain=True)
 
     def _handle_shift_state(self, field: str, value: Any) -> None:
         raw = unwrap_value(value)
         if raw is None:
             return
         mapped = SHIFT_MAP.get(str(raw), "unknown")
-        self.mqtt.publish(topic_for(field), mapped, qos=0, retain=True)
+        self.mqtt.publish(topic_for(field), mapped, qos=1, retain=True)
 
     def _handle_numeric(self, field: str, value: Any, meta: dict[str, Any]) -> None:
         raw = unwrap_value(value)
@@ -510,7 +564,7 @@ class Bridge:
             return
         s = _format_number(raw, meta.get("decimals"))
         if s is not None:
-            self.mqtt.publish(topic_for(field), s, qos=0, retain=True)
+            self.mqtt.publish(topic_for(field), s, qos=1, retain=True)
         else:
             log.debug("non-numeric value for %s: %r", field, raw)
 
@@ -518,7 +572,7 @@ class Bridge:
         raw = unwrap_value(value)
         if raw is None:
             return
-        self.mqtt.publish(topic_for(field), str(raw), qos=0, retain=True)
+        self.mqtt.publish(topic_for(field), str(raw), qos=1, retain=True)
 
     def _handle_enum_strip(self, field: str, value: Any, meta: dict[str, Any]) -> None:
         raw = unwrap_value(value)
@@ -528,7 +582,7 @@ class Bridge:
         prefix = meta.get("prefix", "")
         if prefix and s.startswith(prefix):
             s = s[len(prefix):]
-        self.mqtt.publish(topic_for(field), s, qos=0, retain=True)
+        self.mqtt.publish(topic_for(field), s, qos=1, retain=True)
 
     def _handle_boolean(self, field: str, value: Any, meta: dict[str, Any]) -> None:
         raw = unwrap_value(value)
@@ -537,7 +591,7 @@ class Bridge:
         truthy = bool(raw)
         if meta.get("invert"):
             truthy = not truthy
-        self.mqtt.publish(topic_for(field), "ON" if truthy else "OFF", qos=0, retain=True)
+        self.mqtt.publish(topic_for(field), "ON" if truthy else "OFF", qos=1, retain=True)
 
     def _handle_enum_to_bool(self, field: str, value: Any, meta: dict[str, Any]) -> None:
         raw = unwrap_value(value)
@@ -545,7 +599,7 @@ class Bridge:
             return
         on_value = meta.get("on_value")
         truthy = (str(raw) == on_value)
-        self.mqtt.publish(topic_for(field), "ON" if truthy else "OFF", qos=0, retain=True)
+        self.mqtt.publish(topic_for(field), "ON" if truthy else "OFF", qos=1, retain=True)
 
     def handle_datum(self, key: str, value: Any) -> None:
         if key not in SELECTED_FIELDS:
@@ -593,9 +647,18 @@ class Bridge:
                         "5+ consecutive parse errors — possible Tessie schema drift; "
                         "verify field structure against developer.tessie.com"
                     )
-                return
+                continue
         if had_data:
             self.parse_error_streak = 0
+            self._publish_last_report()
+
+    def _publish_last_report(self) -> None:
+        now = time.time()
+        if now - self._last_report_sent < LAST_REPORT_MIN_INTERVAL:
+            return
+        self._last_report_sent = now
+        ts = datetime.fromtimestamp(now, tz=timezone.utc).isoformat(timespec="seconds")
+        self.mqtt.publish(LAST_REPORT_TOPIC, ts, qos=1, retain=True)
 
     async def run_websocket_once(self) -> None:
         url = f"{TESSIE_URL}/{TESSIE_VIN}"
@@ -611,32 +674,41 @@ class Bridge:
             # Connection established — cancel any pending offline-grace timer
             # before publishing online to avoid a racy offline-after-online flap.
             self._cancel_pending_offline()
+            self.ws_connected = True
             self.publish_availability("online")
             self.backoff = 1
             log.info("connected to Tessie stream")
-            async for raw in ws:
-                text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
-                try:
-                    msg = json.loads(text)
-                except json.JSONDecodeError:
-                    log.warning("non-JSON message: %r", text[:200])
-                    continue
-                self.handle_message(msg)
+            try:
+                await self._read_ws(ws)
+            finally:
+                self.ws_connected = False
+
+    async def _read_ws(self, ws) -> None:
+        async for raw in ws:
+            text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+            try:
+                msg = json.loads(text)
+            except json.JSONDecodeError:
+                log.warning("non-JSON message: %r", text[:200])
+                continue
+            self.handle_message(msg)
 
     async def run(self) -> int:
         self.mqtt_start()
-        await asyncio.sleep(0.5)
-        self.publish_discovery()
         try:
             while not self.shutdown_event.is_set():
                 try:
                     await self.run_websocket_once()
-                except InvalidStatus as e:
-                    code = getattr(getattr(e, "response", None), "status_code", None)
-                    if code == 401:
-                        log.error("Tessie rejected the token (401). Check TESSIE_TOKEN.")
-                        return 2
-                    log.warning("Tessie WS handshake error: %s", e)
+                except InvalidHandshake as e:
+                    code = _handshake_status(e)
+                    if code in (401, 403):
+                        log.error(
+                            "Tessie rejected the token (HTTP %s). Check TESSIE_TOKEN; "
+                            "retrying in %ds.", code, AUTH_FAIL_BACKOFF_SECONDS,
+                        )
+                        self.backoff = AUTH_FAIL_BACKOFF_SECONDS
+                    else:
+                        log.warning("Tessie WS handshake error: %s", e)
                 except ConnectionClosed as e:
                     log.info(
                         "Tessie WS closed (code=%s reason=%r) — likely car sleeping",
@@ -664,7 +736,10 @@ class Bridge:
                     break
                 except asyncio.TimeoutError:
                     pass
-                self.backoff = min(self.backoff * 2, 60)
+                if self.backoff < 60:
+                    self.backoff = min(self.backoff * 2, 60)
+                elif self.backoff > 60:
+                    self.backoff = 60
         finally:
             self._cancel_pending_offline()
             self.publish_availability("offline")

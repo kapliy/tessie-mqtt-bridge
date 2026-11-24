@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.8 — 2026-11-24
+
+Robustness fixes from a code review of the garage automations' failure modes.
+
+- **New `Last Report` timestamp sensor** (`sensor.tesla_streaming_last_report`). Updated (at most every 5 s) whenever a message with data arrives. Shift state and other fields are only published on change and retained, so a missed `P` leaves a stale `D` that looks current; automations can now require a recent report before trusting a streamed value.
+- **State publishes use QoS 1** (were QoS 0), so a broker hiccup can't silently drop a gear or charge-state change.
+- **One bad datum no longer drops the rest of the message.** A parse error used to `return` out of the loop; it now skips just that datum.
+- **Token rejection is actually detected.** websockets 12's legacy client raises `InvalidStatusCode`, not `InvalidStatus`, so the 401 branch never ran and a revoked token retried every 60 s forever. HTTP 401/403 now logs a clear error and backs off 15 minutes (the bridge keeps running so it recovers when the token is fixed).
+- **Re-announce on MQTT reconnect.** New `on_connect` handler republishes discovery and `availability=online` after every broker (re)connect, so the broker's last-will `offline` no longer leaves entities unavailable until the next Tessie reconnect.
+- **No crash if the broker isn't up at boot**: the MQTT connect is now asynchronous and paho retries.
+- Code default for `EXPIRE_AFTER_SECONDS` aligned with the add-on default (0).
+
 ## 0.2.7 — 2026-05-08
 
 - **`expire_after_seconds` default changed from 600 to 0** (disabled). The 0.2.5 default of 600s caused per-entity `unavailable` flapping for slow-changing fields like `DetailedChargeState` (Tessie heartbeat cadence > 10min between events) and `Location` (when the car sleeps). Triggers using `not_from: [unavailable, unknown]` — the standard guard against retained-value replay false-fires — were suppressed on the recovery `unavailable → <state>` transition, breaking real unplug/arrival detection. Pre-0.2.5 had no `expire_after` and these triggers worked in real time; 0.2.7 restores that behavior. Users who want staleness detection can opt in via the add-on Configuration tab. **Existing installs need to manually set `expire_after_seconds` to 0 in the Configuration tab — Supervisor preserves user-saved values across updates and won't pick up the new default automatically.**
